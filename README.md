@@ -6,7 +6,7 @@ Diffuse shading (cos theta) is used to calculate pixel shading.
 
 Libraries
 ---------
-FLOX.js - a simple game dev library
+FLOX.js - a simple game dev library by me
 
 References
 ----------

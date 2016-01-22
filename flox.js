@@ -1,7 +1,9 @@
 /*  
     FLOX.js a barebones javascript library mainly for game developers
-    20.12.2015 v008 - Developed by P.R.
+    22.1.2015 v010 - Developed by P.R.
     MIT license
+
+    Work in Progress
 */
 
 //----- Namespace ----//
@@ -37,6 +39,11 @@ if (typeof flox.namespace == 'undefined')
 			if (display.canvas == undefined)
 				return false;
 			display.ctx = display.canvas.getContext('2d');
+            //Disable smoothing
+            display.ctx.imageSmoothingEnabled = false;
+            display.ctx.mozImageSmoothingEnabled = false;
+            display.ctx.webkitImageSmoothingEnabled = false;
+
 			display.canvas.width = width; // this sets pixel amount to correct
 			display.canvas.height = height; // no blurring
 			display.width = display.canvas.width;
@@ -47,8 +54,8 @@ if (typeof flox.namespace == 'undefined')
 			display.helloWorld();
 		},
         resize: function( width, height) {
-			display.canvas.width = width; // this sets pixel amount to correct
-			display.canvas.height = height; // no blurring
+			//display.canvas.width = width; // this sets pixel amount to correct
+			//display.canvas.height = height; // no blurring
 			display.width = display.canvas.width;
 			display.height = display.canvas.height;
         },
@@ -75,57 +82,115 @@ if (typeof flox.namespace == 'undefined')
 	}
 	//----- classes ------//
 	//time Handler
-	this.timer = function( timePerFrame, newUpdateFunction){
+	this.timer = function( origFPS, newUpdateFunction){
 		//PUBLIC
-		this.updateFrames = 0;
+		this.logicFrames = 0;
 		this.runTimer = 0;
 		this.intervalId = undefined;
 		this.requestId = undefined;
 		this.intervallId = undefined;
-		this.fps = 0;
+		this.FPS = 0;
+		this.logicFPS = 0;
 		//PRIVATE
 		updateFunction = newUpdateFunction;
 		var timeNow = 0;
 		var timeLast = 0;//performance.navigationStart;
-		var timeSinceUpdate = 0;
+		var tLogic = 0;
+		var tRender = 0;
+		var tPassed = 0;
 		var runStart = new Date().getTime();
 		var leftover = 0;
-		var timeFps = 0;//performance.now()+1000;
-		var fpsFrames = 0;
-        var avgTimePerFrame = 0;
-        var oriTimePerFrame = timePerFrame;
+        var tCheckLogicFPS = 0;
+        var tCheckRenderFPS = 0;
+		var logicTotFrames = 0;
+		var renderTotFrames = 0;
+		var tLogicTotFrames = 1000;
+		var tRenderTotFrames = 50;
+        var tLogicAvg = 0;
+        var tRenderAvg = 0;
+        var targetFPS = origFPS
+        var tLogicFrame = 1050 / targetFPS;
+        var targetTimePerFrame = tLogicFrame;
 		//METHODS
-		this.update = function() {
+        //Logic end = start of render
+		this.endLogicFrames = function() { 
 			timeNow = performance.now();
-			if (typeof(leftover) == 'object')
+            //Rendering can't really have any leftover frames
+			tRender = timeNow - timeLast;
+            renderTotFrames++; //One frame
+            tRenderTotFrames += tRender;
+            //Sample every 1000ms for performance and FPS
+			if (timeNow > tCheckRenderFPS ){
+                this.FPS = renderTotFrames; 
+				tCheckRenderFPS = performance.now()+1000; //sample every 1000 ms
+                tRenderAvg = tRenderTotFrames / renderTotFrames;
+                renderTotFrames = 0;
+                tRenderTotFrames = 0;
+            }
+        }
+		this.getLogicFrames = function() {
+            timeNow = performance.now();
+            //if (typeof(leftover) == 'object')
+            if (leftover == undefined)
 				leftover = 0;
-			timeSinceUpdate = timeNow - timeLast + leftover;
-			if (timeSinceUpdate > 1000)
-				timeSinceUpdate = 1000;
-			this.updateFrames = Math.floor(timeSinceUpdate / timePerFrame);
+			tLogic = timeNow - timeLast - tRender;
+			tPassed = timeNow - timeLast + leftover ;
+            // How many frames should be calculated this pass?
+			this.logicFrames = Math.floor(tPassed / tLogicFrame);
+            if (this.logicFrames > targetFPS)
+                this.logicFrames = targetFPS;
 			//FPS
-			fpsFrames += this.updateFrames;
-			if (timeNow > timeFps){
-                //FPS = frames / (elapsed time in ms * 1000)
-				//this.fps = Math.round((fpsFrames) / (1000+(timeNow-timeFps)) * 1000);
-                avgTimePerFrame = (1000+timeNow-timeFps) / fpsFrames;
-				this.fps = fpsFrames+" "+avgTimePerFrame+" "+timePerFrame;
-                // CHECK PERFORMANCE and adjust timePerFrame accordingly
-                if (avgTimePerFrame != Infinity && avgTimePerFrame < 50){
-                    if (avgTimePerFrame > timePerFrame+2){
-                        timePerFrame--;
-                    }else if (avgTimePerFrame < timePerFrame-2){
-                        timePerFrame++;
-                    }
+			logicTotFrames += this.logicFrames;
+			tLogicTotFrames += tLogic;
+			//LEFTOVER (due to fractional amoutn of frames to be calculated)
+			leftover = tPassed - this.logicFrames*tLogicFrame;
+
+            //Sample every 1000ms for fps and performance (could be improved)
+			if (timeNow > tCheckLogicFPS ){
+                this.logicFPS = logicTotFrames; 
+                if (logicTotFrames != 0){
+                    tLogicAvg = tLogicTotFrames / logicTotFrames;
+                }else if( tLogicTotFrames == 0) {
+                    tLogicTotFrames = 1000;
                 }
-				fpsFrames = 0;
-				timeFps = performance.now()+1000; //sample every 1000 ms
+                // Here comes the balancing act
+                if (this.FPS < 5) {
+                    targetFPS = Math.ceil(0.5*targetFPS);
+                    tLogicFrame = (1000+tRenderAvg) / targetFPS;
+                }else if (this.FPS < 30) {
+                    targetFPS--;
+                    tLogicFrame = (1000+tRenderAvg) / targetFPS;
+                }else if (this.FPS > 60) {
+                    targetFPS++;
+                    tLogicFrame = (1000+tRenderAvg) / targetFPS;
+                }else if (this.logicFPS < 45) {
+                    targetFPS++;
+                    tLogicFrame = (1000+tRenderAvg) / targetFPS;
+                }
+                /*}else if (this.FPS > 45) {
+                    targetFPS++;
+                    var tNew = (1000+tRenderAvg) / targetFPS;
+                    tLogicFrame = 0.7 * tLogicFrame + (1.0-0.7) * tNew;
+                }else if( this.FPS < 35){
+                    targetFPS--;
+                    var tNew = (1000+tRenderAvg) / targetFPS;
+                    tLogicFrame = 0.7 * tLogicFrame + (1.0-0.7) * tNew;
+                    //tLogicFrame = (1000+tRenderAvg) / targetFPS; //tLogic??
+                //}else if( this.FPS < 38 ||this.FPS > 42){*/
+                    //var tNew = (1000+tRenderAvg) / targetFPS;
+                    //tLogicFrame = 0.7 * tLogicFrame + (1.0-0.7) * tNew;
+                //}
+                if (tLogicFrame < 5)
+                    tLogicFrame = 5;
+                //For next sample, reset framecounter
+                logicTotFrames = 0;
+                tLogicTotFrames = 0;
+				tCheckLogicFPS = performance.now()+1000; //sample every 1000 ms
 			}
-			//LEFTOVER
-			leftover = timeSinceUpdate - this.updateFrames*timePerFrame;
-			//console.log(this.updateFrames);
+                this.fpsTXT = this.FPS+"/"+this.logicFPS;
+                //this.fpsTXT = this.FPS+"/"+this.logicFPS+" "+targetFPS+" t:"+tLogicAvg.toFixed(1)+"/"+tRenderAvg.toFixed(1)+" "+tLogicFrame.toFixed(2)+" --> "+this.logicFrames+" (leftover "+leftover.toFixed(2)+") "+(1000/tLogic).toFixed(2);
+                //"+avgTimePerFrame.toFixed(3)+"/"+tLogicFrame.toFixed(3)+" L:"+leftover.toFixed(3)+" ("+Math.ceil(1000/tLogic)+") tR:"+tRender.toFixed(2)+"-->"+this.logicFrames;
 			timeLast = performance.now();
-			//return timeSinceUpdate/timePerFrame;
 		}
 		
 		this.start = function() {
@@ -160,7 +225,6 @@ if (typeof flox.namespace == 'undefined')
 				display.ctx.lineTo(vertexArray[i][0], vertexArray[i][1]);
 			
 			}
-			//display.ctx.lineTo(vertexArray[0][0], vertexArray[0][1]);
 			
 			display.ctx.closePath();
 			display.ctx.fill();
@@ -195,6 +259,11 @@ if (typeof flox.namespace == 'undefined')
 				display.ctx.fillText(line, x, y+15*n);
 			}
 		};
+        //CANVAS MANIPULATIOn
+        this.scale = function( x, y) {
+            //display.ctx.scale( x,y);
+            display.ctx.drawImage( display.canvas, 0, 0, 2*display.width, 2*display.height);
+        }
 
 		this.screenWidth = function(){return display.width;};
 		this.screenHeight = function(){return display.height;};
@@ -243,7 +312,7 @@ if (typeof flox.namespace == 'undefined')
 		this.drawImageStretch = function ( key, x, y, w, h) {
 			display.ctx.drawImage(this.image[key], 0, 0, this.image[key].width, this.image[key].height, x,y, w, h);
 		};
-        this.putImageData = function( imageData, x, y) {
+        this.putImageData = function( imageData, x, y, target) {
             display.ctx.putImageData( imageData, x, y);
         }
         /*this.createImageData = function( imageDataOrWidth, height) {
@@ -287,12 +356,26 @@ if (typeof flox.namespace == 'undefined')
     this.mouse = function() {
         this.x = 0;
         this.y = 0;
+        var hasMoved = false;
+        this.hasMoved = function() {
+            if (hasMoved){
+                hasMoved = false;
+                return true;
+            }
+            return false;
+        };
+        /*this.bindMove = function( moveCallback) {
+            if (moveCallback !== undefined)
+                display.canvas.addEventListener("mousemove", moveCallback, false);
+        };*/
         function mouseMove(event) {
             this.x = event.clientX + document.body.scrollLeft;
             this.y = event.clientY + document.body.scrollTop;
             this.x -= display.canvas.offsetLeft;
             this.y -= display.canvas.offsetTop;
+            hasMoved = true;
         }
+        //Constructor
         display.canvas.addEventListener("mousemove", mouseMove.bind(this), false);
     }
     this.keys = function() {

@@ -36,11 +36,8 @@ function toggleFullScreen() {
     if (!document.mozFullScreen && !document.webkitFullScreen) {
         if (canvas.mozRequestFullScreen) {
             canvas.mozRequestFullScreen();
-            //GAME.screenExpand();
         } else {
             canvas.webkitRequestFullScreen(Element.ALLOW_KEYBOARD_INPUT);
-            //GAME.resizeScreen(window.screen.width, window.screen.height);
-            //GAME.screenExpand();
         }
     }
 }
